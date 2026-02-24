@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   LayoutTemplate,
   Code2,
@@ -12,8 +12,22 @@ import {
   CircleDot,
   Copy,
   Check,
+  GripVertical,
+  MoreVertical,
+  Plus,
+  PanelLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface TemplateViewerProps {
   data: unknown;
@@ -21,26 +35,38 @@ interface TemplateViewerProps {
   error: string | null;
 }
 
-type ViewMode = "visual" | "json";
+type ViewMode = "visual" | "json" | "builder";
 
 interface TemplateField {
   name?: string;
+  displayName?: string;
   label?: string;
   type?: string;
+  typeName?: string;
+  viewType?: string;
+  required?: boolean;
+  requiredExpression?: string;
+  readOnlyExpression?: string;
+  hideExpression?: string;
   options?: string[];
+  fields?: TemplateField[];
   [key: string]: unknown;
 }
 
 interface TemplateModule {
   name?: string;
+  displayName?: string;
   label?: string;
   type?: string;
+  moduleType?: string;
+  allowEditForReview?: boolean;
   fields?: TemplateField[];
   [key: string]: unknown;
 }
 
 interface TemplateTab {
   name?: string;
+  displayName?: string;
   label?: string;
   modules?: TemplateModule[];
   sections?: TemplateModule[];
@@ -62,23 +88,20 @@ interface TemplateData {
 
 function extractTemplate(data: unknown): TemplateData | null {
   if (!data || typeof data !== "object") return null;
-
   const d = data as Record<string, unknown>;
-
   if (d.template && typeof d.template === "object") {
     return d.template as TemplateData;
   }
-
   if (d.tabs || d.displayName || d.name) {
     return d as TemplateData;
   }
-
   if (Array.isArray(data) && data.length > 0) {
     return extractTemplate(data[0]);
   }
-
   return d as TemplateData;
 }
+
+/* ──────────────────────────── Visual Tree View ──────────────────────────── */
 
 function TreeNode({
   label,
@@ -142,7 +165,7 @@ function VisualView({ data }: { data: TemplateData }) {
         tabs.map((tab, i) => (
           <TreeNode
             key={i}
-            label={tab.name || tab.label || `Tab ${i + 1}`}
+            label={tab.name || tab.displayName || tab.label || `Tab ${i + 1}`}
             icon={<Layers className="h-3.5 w-3.5" />}
             depth={0}
           >
@@ -150,9 +173,14 @@ function VisualView({ data }: { data: TemplateData }) {
               (mod: TemplateModule, j: number) => (
                 <TreeNode
                   key={j}
-                  label={mod.name || mod.label || `Module ${j + 1}`}
+                  label={
+                    mod.displayName ||
+                    mod.name ||
+                    mod.label ||
+                    `Module ${j + 1}`
+                  }
                   icon={<Box className="h-3.5 w-3.5" />}
-                  type={mod.type}
+                  type={mod.type || mod.moduleType}
                   depth={1}
                 >
                   {(mod.fields || []).map(
@@ -160,10 +188,13 @@ function VisualView({ data }: { data: TemplateData }) {
                       <TreeNode
                         key={k}
                         label={
-                          field.name || field.label || `Field ${k + 1}`
+                          field.displayName ||
+                          field.name ||
+                          field.label ||
+                          `Field ${k + 1}`
                         }
                         icon={<FormInput className="h-3.5 w-3.5" />}
-                        type={field.type}
+                        type={field.type || field.viewType}
                         depth={2}
                       >
                         {field.options && field.options.length > 0
@@ -171,9 +202,7 @@ function VisualView({ data }: { data: TemplateData }) {
                               <TreeNode
                                 key={l}
                                 label={String(opt)}
-                                icon={
-                                  <CircleDot className="h-3 w-3" />
-                                }
+                                icon={<CircleDot className="h-3 w-3" />}
                                 depth={3}
                               />
                             ))
@@ -195,15 +224,12 @@ function VisualView({ data }: { data: TemplateData }) {
 
 function RawObjectView({ data }: { data: unknown }) {
   if (data === null || data === undefined) return null;
-
   if (typeof data !== "object") {
     return (
       <span className="text-sm text-muted-foreground">{String(data)}</span>
     );
   }
-
   const entries = Object.entries(data as Record<string, unknown>);
-
   return (
     <div className="flex flex-col gap-1 pl-2">
       {entries.map(([key, value]) => {
@@ -244,6 +270,8 @@ function RawObjectView({ data }: { data: unknown }) {
   );
 }
 
+/* ──────────────────────────── JSON View ──────────────────────────── */
+
 function JsonView({ data }: { data: unknown }) {
   const [copied, setCopied] = useState(false);
   const json = JSON.stringify(data, null, 2);
@@ -276,8 +304,683 @@ function JsonView({ data }: { data: unknown }) {
   );
 }
 
-export function TemplateViewer({ data, isLoading, error }: TemplateViewerProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>("visual");
+/* ──────────────────────────── Builder View ──────────────────────────── */
+
+const TAB_COLORS = [
+  "bg-blue-500",
+  "bg-emerald-500",
+  "bg-amber-500",
+  "bg-rose-500",
+  "bg-cyan-500",
+  "bg-fuchsia-500",
+];
+
+interface SelectedItem {
+  type: "tab" | "module" | "field";
+  tabIndex: number;
+  moduleIndex?: number;
+  fieldIndex?: number;
+}
+
+function BuilderModuleCard({
+  mod,
+  tabIndex,
+  moduleIndex,
+  selected,
+  onSelect,
+}: {
+  mod: TemplateModule;
+  tabIndex: number;
+  moduleIndex: number;
+  selected: boolean;
+  onSelect: (item: SelectedItem) => void;
+}) {
+  return (
+    <button
+      onClick={() =>
+        onSelect({ type: "module", tabIndex, moduleIndex })
+      }
+      className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition-all ${
+        selected
+          ? "border-primary bg-primary/5 ring-1 ring-primary"
+          : "border-border bg-card hover:border-muted-foreground/30"
+      }`}
+    >
+      <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+      <div className="flex flex-col gap-0.5 overflow-hidden">
+        <span className="truncate text-sm font-medium text-foreground">
+          {mod.displayName || mod.name || mod.label || "Unnamed Module"}
+        </span>
+        <span className="truncate text-xs text-muted-foreground font-mono">
+          {mod.type || mod.moduleType || "module"}
+        </span>
+      </div>
+      <button
+        className="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <MoreVertical className="h-3.5 w-3.5" />
+      </button>
+    </button>
+  );
+}
+
+function BuilderFieldCard({
+  field,
+  tabIndex,
+  moduleIndex,
+  fieldIndex,
+  selected,
+  onSelect,
+}: {
+  field: TemplateField;
+  tabIndex: number;
+  moduleIndex: number;
+  fieldIndex: number;
+  selected: boolean;
+  onSelect: (item: SelectedItem) => void;
+}) {
+  return (
+    <button
+      onClick={() =>
+        onSelect({ type: "field", tabIndex, moduleIndex, fieldIndex })
+      }
+      className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-all ${
+        selected
+          ? "border-primary bg-primary/5 ring-1 ring-primary"
+          : "border-border bg-card hover:border-muted-foreground/30"
+      }`}
+    >
+      <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/20">
+        <FormInput className="h-3 w-3 text-primary" />
+      </div>
+      <div className="flex flex-col gap-0 overflow-hidden">
+        <span className="truncate text-sm font-medium text-foreground">
+          {field.displayName || field.name || field.label || "Unnamed Field"}
+        </span>
+        {(field.typeName || field.type) && (
+          <span className="truncate text-[10px] text-muted-foreground font-mono">
+            {field.typeName || field.type}
+          </span>
+        )}
+      </div>
+      <button
+        className="ml-auto shrink-0 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <MoreVertical className="h-3.5 w-3.5" />
+      </button>
+    </button>
+  );
+}
+
+function PropertiesPanel({
+  selectedItem,
+  template,
+}: {
+  selectedItem: SelectedItem | null;
+  template: TemplateData;
+}) {
+  if (!selectedItem) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+        <PanelLeft className="h-8 w-8 opacity-30" />
+        <p className="text-sm">Select a tab, module, or field</p>
+        <p className="text-xs">Properties will appear here</p>
+      </div>
+    );
+  }
+
+  const tabs = template.tabs || [];
+  const tab = tabs[selectedItem.tabIndex];
+  if (!tab) return null;
+
+  if (selectedItem.type === "tab") {
+    return (
+      <div className="flex flex-col gap-4">
+        <h3 className="text-sm font-semibold text-foreground">
+          {"Properties - "}
+          {tab.displayName || tab.name || tab.label || "Tab"}
+        </h3>
+        <PropertyField
+          label="Tab Name"
+          value={tab.displayName || tab.name || tab.label || ""}
+        />
+        <PropertyField
+          label="Tab Key"
+          value={tab.name || ""}
+          hint={`Key: ${tab.name || "N/A"}`}
+        />
+        <div className="text-xs text-muted-foreground">
+          {"Modules: "}
+          {(tab.modules || tab.sections || []).length}
+        </div>
+      </div>
+    );
+  }
+
+  const modules = tab.modules || tab.sections || [];
+
+  if (
+    selectedItem.type === "module" &&
+    selectedItem.moduleIndex !== undefined
+  ) {
+    const mod = modules[selectedItem.moduleIndex];
+    if (!mod) return null;
+
+    return (
+      <ScrollArea className="h-full">
+        <div className="flex flex-col gap-4 pr-2">
+          <h3 className="text-sm font-semibold text-foreground">
+            {"Properties - "}
+            {mod.displayName || mod.name || mod.label || "Module"}
+          </h3>
+
+          <PropertyField
+            label="Module Type"
+            value={mod.type || mod.moduleType || ""}
+            hint={`Type: ${mod.type || mod.moduleType || "N/A"}`}
+          />
+          <PropertyField
+            label="Display Name"
+            value={mod.displayName || mod.name || mod.label || ""}
+          />
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="allow-edit"
+              checked={!!mod.allowEditForReview}
+              disabled
+            />
+            <label
+              htmlFor="allow-edit"
+              className="text-sm text-foreground"
+            >
+              Allow Edit for Review
+            </label>
+          </div>
+
+          {/* Fields section */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-foreground">
+                {"Fields ("}
+                {(mod.fields || []).length}
+                {")"}
+              </span>
+              <button className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {(mod.fields || []).length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {(mod.fields || []).map((field, k) => (
+                  <FieldPropertyCard key={k} field={field} />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border bg-secondary/50 py-4 text-center text-xs text-muted-foreground">
+                No Fields
+              </div>
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+    );
+  }
+
+  if (
+    selectedItem.type === "field" &&
+    selectedItem.moduleIndex !== undefined &&
+    selectedItem.fieldIndex !== undefined
+  ) {
+    const mod = modules[selectedItem.moduleIndex];
+    if (!mod) return null;
+    const field = (mod.fields || [])[selectedItem.fieldIndex];
+    if (!field) return null;
+
+    return (
+      <ScrollArea className="h-full">
+        <div className="flex flex-col gap-4 pr-2">
+          <h3 className="text-sm font-semibold text-foreground">
+            {"Properties - "}
+            {field.displayName || field.name || field.label || "Field"}
+          </h3>
+          <PropertyField
+            label="Display Name"
+            value={
+              field.displayName || field.name || field.label || ""
+            }
+          />
+          <PropertyField
+            label="Type Name"
+            value={field.typeName || field.type || ""}
+          />
+          <PropertySelect
+            label="View Type"
+            value={field.viewType || field.type || "Text"}
+            options={[
+              "Text",
+              "Checkbox",
+              "Radio",
+              "Date",
+              "DateTime",
+              "Number",
+              "Multiline",
+              "NestedFields",
+              "Generic REIT",
+              "Generic List",
+            ]}
+          />
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="field-required"
+              checked={!!field.required}
+              disabled
+            />
+            <label
+              htmlFor="field-required"
+              className="text-sm text-foreground"
+            >
+              Required
+            </label>
+          </div>
+          <PropertyField
+            label="Required Expression (optional)"
+            value={field.requiredExpression || ""}
+            placeholder="Required Expression (optional)"
+          />
+          <PropertyField
+            label="Read Only Expression"
+            value={field.readOnlyExpression || ""}
+            placeholder="Read Only Expression"
+          />
+          <PropertyField
+            label="Hide Expression"
+            value={field.hideExpression || ""}
+            placeholder="Hide Expression"
+          />
+
+          {/* Sub-fields */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-foreground">
+                {"Fields ("}
+                {(field.fields || []).length}
+                {")"}
+              </span>
+              <button className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {(field.fields || []).length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {(field.fields || []).map((subField, l) => (
+                  <FieldPropertyCard key={l} field={subField} />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-border bg-secondary/50 py-4 text-center text-xs text-muted-foreground">
+                No Fields
+              </div>
+            )}
+          </div>
+
+          {/* Options */}
+          {field.options && field.options.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <span className="text-sm font-semibold text-foreground">
+                {"Options ("}
+                {field.options.length}
+                {")"}
+              </span>
+              <div className="flex flex-col gap-1.5">
+                {field.options.map((opt, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-2 rounded border border-border bg-secondary/50 px-3 py-1.5 text-sm text-foreground"
+                  >
+                    <CircleDot className="h-3 w-3 text-primary" />
+                    {String(opt)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+    );
+  }
+
+  return null;
+}
+
+function FieldPropertyCard({ field }: { field: TemplateField }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="rounded-lg border border-border bg-card">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+      >
+        <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/20">
+          <FormInput className="h-3 w-3 text-primary" />
+        </div>
+        <span className="truncate text-sm font-medium text-foreground">
+          {field.displayName || field.name || field.label || "Field"}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          {expanded ? (
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+          <button
+            className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MoreVertical className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </button>
+      {expanded && (
+        <div className="flex flex-col gap-3 border-t border-border px-3 py-3">
+          <div className="flex items-center gap-2">
+            <Checkbox checked={!!field.required} disabled />
+            <span className="text-sm text-foreground">Required</span>
+          </div>
+          <PropertyField
+            label="Display Name"
+            value={
+              field.displayName || field.name || field.label || ""
+            }
+          />
+          <PropertyField
+            label="Type Name"
+            value={field.typeName || field.type || ""}
+          />
+          <PropertySelect
+            label="View Type"
+            value={field.viewType || field.type || "Text"}
+            options={[
+              "Text",
+              "Checkbox",
+              "Radio",
+              "Date",
+              "DateTime",
+              "Number",
+              "Multiline",
+              "NestedFields",
+            ]}
+          />
+          <PropertyField
+            label="Required Expression (optional)"
+            value={field.requiredExpression || ""}
+          />
+          <PropertyField
+            label="Read Only Expression"
+            value={field.readOnlyExpression || ""}
+          />
+          <PropertyField
+            label="Hide Expression"
+            value={field.hideExpression || ""}
+          />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-foreground">
+                {"Fields ("}
+                {(field.fields || []).length}
+                {")"}
+              </span>
+              <button className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <Plus className="h-3 w-3" />
+              </button>
+            </div>
+            {(field.fields || []).length === 0 && (
+              <div className="rounded border border-border bg-secondary/50 py-2 text-center text-[10px] text-muted-foreground">
+                No Fields
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PropertyField({
+  label,
+  value,
+  hint,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs text-muted-foreground">{label}</label>
+      <Input
+        value={value}
+        readOnly
+        placeholder={placeholder || label}
+        className="h-8 text-sm bg-secondary/50 border-border"
+      />
+      {hint && (
+        <span className="text-[10px] text-muted-foreground">{hint}</span>
+      )}
+    </div>
+  );
+}
+
+function PropertySelect({
+  label,
+  value,
+  options,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs text-muted-foreground">{label}</label>
+      <Select value={value} disabled>
+        <SelectTrigger className="h-8 w-full bg-secondary/50 border-border text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((opt) => (
+            <SelectItem key={opt} value={opt}>
+              {opt}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function BuilderView({ data }: { data: TemplateData }) {
+  const tabs = data.tabs || [];
+  const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(
+    null
+  );
+  const [collapsedTabs, setCollapsedTabs] = useState<Set<number>>(
+    new Set()
+  );
+
+  const toggleTab = (index: number) => {
+    setCollapsedTabs((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const allModules = useMemo(() => {
+    return tabs.flatMap((tab, ti) =>
+      (tab.modules || tab.sections || []).map((mod, mi) => ({
+        mod,
+        tabIndex: ti,
+        moduleIndex: mi,
+      }))
+    );
+  }, [tabs]);
+
+  return (
+    <div className="flex h-[560px] gap-0 overflow-hidden rounded-lg border border-border">
+      {/* Left Panel - Tabs & Modules Tree */}
+      <div className="flex w-1/2 flex-col border-r border-border bg-card">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
+          <span className="text-sm font-semibold text-foreground">
+            Tabs
+          </span>
+          <Button
+            size="sm"
+            className="h-7 gap-1 text-xs bg-primary text-primary-foreground"
+          >
+            <Plus className="h-3 w-3" />
+            Add Tab
+          </Button>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="flex flex-col gap-1 p-2">
+            {tabs.length > 0 ? (
+              tabs.map((tab, ti) => {
+                const modules = tab.modules || tab.sections || [];
+                const isCollapsed = collapsedTabs.has(ti);
+                const colorClass = TAB_COLORS[ti % TAB_COLORS.length];
+                const isTabSelected =
+                  selectedItem?.type === "tab" &&
+                  selectedItem.tabIndex === ti;
+
+                return (
+                  <div key={ti} className="flex flex-col">
+                    {/* Tab Header */}
+                    <div
+                      className={`flex items-center gap-2 rounded-lg px-2 py-2 ${
+                        isTabSelected
+                          ? "bg-primary/10"
+                          : "hover:bg-secondary/50"
+                      }`}
+                    >
+                      <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                      <button
+                        onClick={() => toggleTab(ti)}
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${colorClass}`}
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight className="h-3 w-3 text-foreground" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3 text-foreground" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() =>
+                          setSelectedItem({
+                            type: "tab",
+                            tabIndex: ti,
+                          })
+                        }
+                        className="flex-1 text-left text-sm font-semibold text-foreground"
+                      >
+                        {tab.displayName ||
+                          tab.name ||
+                          tab.label ||
+                          `Tab ${ti + 1}`}
+                      </button>
+                      <Button
+                        size="sm"
+                        className="h-6 gap-1 text-[10px] bg-primary text-primary-foreground"
+                      >
+                        Add Module
+                      </Button>
+                      <button className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground">
+                        <MoreVertical className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Modules under tab */}
+                    {!isCollapsed && (
+                      <div className="flex flex-col gap-1.5 pb-2 pl-7 pr-2 pt-1">
+                        {modules.map(
+                          (mod: TemplateModule, mi: number) => (
+                            <BuilderModuleCard
+                              key={mi}
+                              mod={mod}
+                              tabIndex={ti}
+                              moduleIndex={mi}
+                              selected={
+                                !!(
+                                  selectedItem &&
+                                  selectedItem.tabIndex === ti &&
+                                  selectedItem.moduleIndex === mi &&
+                                  (selectedItem.type === "module" ||
+                                    selectedItem.type === "field")
+                                )
+                              }
+                              onSelect={setSelectedItem}
+                            />
+                          )
+                        )}
+                        {modules.length === 0 && (
+                          <div className="py-3 text-center text-xs text-muted-foreground">
+                            No modules
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
+                <Layers className="h-8 w-8 opacity-30" />
+                <p className="text-xs">No tabs in template</p>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* Right Panel - Properties */}
+      <div className="flex w-1/2 flex-col bg-background">
+        <div className="border-b border-border px-3 py-2.5">
+          <span className="text-sm font-semibold text-foreground">
+            Properties
+          </span>
+        </div>
+        <ScrollArea className="flex-1">
+          <div className="p-4">
+            <PropertiesPanel
+              selectedItem={selectedItem}
+              template={data}
+            />
+          </div>
+        </ScrollArea>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────── Main TemplateViewer ──────────────────────────── */
+
+export function TemplateViewer({
+  data,
+  isLoading,
+  error,
+}: TemplateViewerProps) {
+  const [viewMode, setViewMode] = useState<ViewMode>("builder");
 
   if (isLoading) {
     return (
@@ -301,7 +1004,9 @@ export function TemplateViewer({ data, isLoading, error }: TemplateViewerProps) 
       <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
         <LayoutTemplate className="h-10 w-10 opacity-30" />
         <p className="text-sm">No response yet</p>
-        <p className="text-xs">Send a command to see the workflow output here</p>
+        <p className="text-xs">
+          Send a command to see the workflow output here
+        </p>
       </div>
     );
   }
@@ -315,6 +1020,17 @@ export function TemplateViewer({ data, isLoading, error }: TemplateViewerProps) 
           Response
         </h2>
         <div className="flex rounded-lg border border-border bg-secondary p-0.5">
+          <button
+            onClick={() => setViewMode("builder")}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === "builder"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <PanelLeft className="h-3.5 w-3.5" />
+            Builder
+          </button>
           <button
             onClick={() => setViewMode("visual")}
             className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
@@ -340,13 +1056,17 @@ export function TemplateViewer({ data, isLoading, error }: TemplateViewerProps) 
         </div>
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-3 min-h-[200px]">
-        {viewMode === "visual" && template ? (
+      {viewMode === "builder" && template ? (
+        <BuilderView data={template} />
+      ) : viewMode === "visual" && template ? (
+        <div className="rounded-lg border border-border bg-card p-3 min-h-[200px]">
           <VisualView data={template} />
-        ) : (
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-card p-3 min-h-[200px]">
           <JsonView data={data} />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
