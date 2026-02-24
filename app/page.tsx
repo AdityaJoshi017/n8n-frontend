@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Workflow, Zap } from "lucide-react";
 import { CommandPanel } from "@/components/command-panel";
 import { TemplateViewer } from "@/components/template-viewer";
 import { FloatingAssistant } from "@/components/floating-assistant";
 import { ResponseLog } from "@/components/response-log";
+import { sendCommand } from "@/lib/send-command";
 
 interface LogEntry {
   timestamp: Date;
@@ -18,13 +19,34 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [connected, setConnected] = useState<boolean | null>(null);
 
-  const handleResponse = useCallback((data: unknown) => {
+  // Check connectivity on mount by calling GET_TEMPLATE
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      try {
+        const data = await sendCommand({ action: "GET_TEMPLATE" });
+        if (!cancelled) {
+          setConnected(true);
+          setResponseData(data);
+        }
+      } catch {
+        if (!cancelled) setConnected(false);
+      }
+    }
+    check();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleResponse = useCallback((data: unknown, payload: unknown) => {
     setResponseData(data);
     setLogEntries((prev) => [
       {
         timestamp: new Date(),
-        payload: "see request",
+        payload,
         response: data,
       },
       ...prev,
@@ -49,19 +71,31 @@ export default function Home() {
               <Workflow className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground tracking-tight">
+              <h1 className="text-lg font-bold text-foreground tracking-tight font-sans">
                 n8n Workflow Tester
               </h1>
               <p className="text-xs text-muted-foreground">
-                Frontend testing interface
+                Visual Postman for template building
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1.5">
-              <Zap className="h-3.5 w-3.5 text-success" />
+              <Zap
+                className={`h-3.5 w-3.5 ${
+                  connected === true
+                    ? "text-success"
+                    : connected === false
+                      ? "text-destructive"
+                      : "text-muted-foreground animate-pulse"
+                }`}
+              />
               <span className="text-xs font-medium text-foreground">
-                Connected
+                {connected === true
+                  ? "Connected"
+                  : connected === false
+                    ? "Disconnected"
+                    : "Checking..."}
               </span>
             </div>
           </div>
@@ -103,7 +137,7 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Floating Assistant */}
+      {/* Floating n8n Workflow Embed */}
       <FloatingAssistant />
     </div>
   );
