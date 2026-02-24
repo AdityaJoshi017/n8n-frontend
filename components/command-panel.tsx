@@ -45,7 +45,7 @@ export function CommandPanel({
       case "text":
         return { text: input };
       case "jira":
-        return { jiraText: input, dryRun };
+        return { action: "IMPORT_JIRA_TEXT", jiraText: input, dryRun };
       case "requirement":
         return { requirementText: input };
     }
