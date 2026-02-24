@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo } from "react";
 import {
   LayoutTemplate,
   Code2,
@@ -16,8 +16,6 @@ import {
   MoreVertical,
   Plus,
   PanelLeft,
-  Maximize2,
-  Minimize2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1047,35 +1045,10 @@ export function TemplateViewer({
   error,
 }: TemplateViewerProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("builder");
-  const [expanded, setExpanded] = useState(false);
-  const [height, setHeight] = useState(560);
-  const [isResizing, setIsResizing] = useState(false);
-
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      setIsResizing(true);
-      const startY = e.clientY;
-      const startH = height;
-
-      const onMove = (ev: MouseEvent) => {
-        const delta = ev.clientY - startY;
-        setHeight(Math.max(300, Math.min(1200, startH + delta)));
-      };
-      const onUp = () => {
-        setIsResizing(false);
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-      };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
-    },
-    [height]
-  );
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-primary" />
         <p className="text-sm">Sending to workflow...</p>
       </div>
@@ -1092,7 +1065,7 @@ export function TemplateViewer({
 
   if (!data) {
     return (
-      <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
         <LayoutTemplate className="h-10 w-10 opacity-30" />
         <p className="text-sm">No response yet</p>
         <p className="text-xs">
@@ -1105,100 +1078,65 @@ export function TemplateViewer({
   const template = extractTemplate(data);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+    <div className="flex h-full flex-col gap-3">
+      {/* Tab bar */}
+      <div className="flex shrink-0 items-center justify-between">
         <h2 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">
           Response
         </h2>
-        <div className="flex items-center gap-2">
-          {viewMode === "builder" && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setExpanded(!expanded)}
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-            >
-              {expanded ? (
-                <Minimize2 className="h-3.5 w-3.5" />
-              ) : (
-                <Maximize2 className="h-3.5 w-3.5" />
-              )}
-              <span className="sr-only">
-                {expanded ? "Collapse" : "Expand"}
-              </span>
-            </Button>
-          )}
-          <div className="flex rounded-lg border border-border bg-secondary p-0.5">
-            <button
-              onClick={() => setViewMode("builder")}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                viewMode === "builder"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <PanelLeft className="h-3.5 w-3.5" />
-              Builder
-            </button>
-            <button
-              onClick={() => setViewMode("visual")}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                viewMode === "visual"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <LayoutTemplate className="h-3.5 w-3.5" />
-              Visual
-            </button>
-            <button
-              onClick={() => setViewMode("json")}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                viewMode === "json"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Code2 className="h-3.5 w-3.5" />
-              JSON
-            </button>
-          </div>
+        <div className="flex rounded-lg border border-border bg-secondary p-0.5">
+          <button
+            onClick={() => setViewMode("builder")}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === "builder"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <PanelLeft className="h-3.5 w-3.5" />
+            Builder
+          </button>
+          <button
+            onClick={() => setViewMode("visual")}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === "visual"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <LayoutTemplate className="h-3.5 w-3.5" />
+            Visual
+          </button>
+          <button
+            onClick={() => setViewMode("json")}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === "json"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Code2 className="h-3.5 w-3.5" />
+            JSON
+          </button>
         </div>
       </div>
 
-      {viewMode === "builder" && template ? (
-        <div className="flex flex-col">
-          <div
-            style={{
-              height: expanded ? "calc(100vh - 200px)" : `${height}px`,
-            }}
-            className="transition-[height] duration-200"
-          >
+      {/* Content fills remaining height */}
+      <div className="min-h-0 flex-1">
+        {viewMode === "builder" && template ? (
+          <div className="h-full">
             <BuilderView data={template} />
           </div>
-          {/* Resize handle */}
-          {!expanded && (
-            <div
-              onMouseDown={handleResizeStart}
-              className={`mx-auto mt-1 flex h-3 w-20 cursor-row-resize items-center justify-center rounded-full transition-colors ${
-                isResizing
-                  ? "bg-primary/30"
-                  : "bg-border hover:bg-primary/20"
-              }`}
-            >
-              <div className="h-0.5 w-8 rounded-full bg-muted-foreground/40" />
-            </div>
-          )}
-        </div>
-      ) : viewMode === "visual" && template ? (
-        <div className="rounded-lg border border-border bg-card p-3 min-h-[200px] max-h-[700px] overflow-auto">
-          <VisualView data={template} />
-        </div>
-      ) : (
-        <div className="rounded-lg border border-border bg-card p-3 min-h-[200px]">
-          <JsonView data={data} />
-        </div>
-      )}
+        ) : viewMode === "visual" && template ? (
+          <div className="h-full overflow-auto rounded-lg border border-border bg-card p-3">
+            <VisualView data={template} />
+          </div>
+        ) : (
+          <div className="h-full overflow-auto rounded-lg border border-border bg-card p-3">
+            <JsonView data={data} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -7,6 +7,11 @@ import { TemplateViewer } from "@/components/template-viewer";
 import { FloatingAssistant } from "@/components/floating-assistant";
 import { ResponseLog } from "@/components/response-log";
 import { sendCommand } from "@/lib/send-command";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
 
 interface LogEntry {
   timestamp: Date;
@@ -21,7 +26,6 @@ export default function Home() {
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
 
-  // Check connectivity on mount by calling GET_TEMPLATE
   useEffect(() => {
     let cancelled = false;
     async function check() {
@@ -44,11 +48,7 @@ export default function Home() {
   const handleResponse = useCallback((data: unknown, payload: unknown) => {
     setResponseData(data);
     setLogEntries((prev) => [
-      {
-        timestamp: new Date(),
-        payload,
-        response: data,
-      },
+      { timestamp: new Date(), payload, response: data },
       ...prev,
     ]);
   }, []);
@@ -62,16 +62,16 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex h-screen flex-col bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+      <header className="shrink-0 border-b border-border bg-card">
+        <div className="flex items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
               <Workflow className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-foreground tracking-tight font-sans">
+              <h1 className="text-lg font-bold tracking-tight text-foreground font-sans">
                 n8n Workflow Tester
               </h1>
               <p className="text-xs text-muted-foreground">
@@ -102,41 +102,55 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        {/* Top Row: Command Panel + Template Viewer */}
-        <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
-          {/* Left Column - Command Panel + History */}
-          <div className="flex flex-col gap-6">
-            <div className="rounded-xl border border-border bg-card p-5">
-              <CommandPanel
-                onResponse={handleResponse}
-                onLoading={handleLoading}
-                onError={handleError}
-              />
-            </div>
-
-            {/* Request History */}
-            <div className="rounded-xl border border-border bg-card p-5">
-              <ResponseLog entries={logEntries} />
-              {logEntries.length === 0 && (
-                <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground">
-                  <p className="text-xs">Request history will appear here</p>
+      {/* Main content - VS Code style resizable panels */}
+      <div className="flex-1 overflow-hidden">
+        <ResizablePanelGroup direction="horizontal" className="h-full">
+          {/* Left Panel - Command + History (like VS Code explorer) */}
+          <ResizablePanel defaultSize={28} minSize={18} maxSize={50}>
+            <div className="flex h-full flex-col overflow-hidden">
+              <div className="flex-1 overflow-auto p-4">
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <CommandPanel
+                    onResponse={handleResponse}
+                    onLoading={handleLoading}
+                    onError={handleError}
+                  />
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
 
-          {/* Right Column - Template Viewer (wider) */}
-          <div className="rounded-xl border border-border bg-card p-5">
-            <TemplateViewer
-              data={responseData}
-              isLoading={isLoading}
-              error={error}
-            />
-          </div>
-        </div>
-      </main>
+              {/* Request History pinned to bottom */}
+              <div className="shrink-0 border-t border-border p-4">
+                <div className="rounded-xl border border-border bg-card p-4">
+                  <ResponseLog entries={logEntries} />
+                  {logEntries.length === 0 && (
+                    <div className="flex flex-col items-center justify-center gap-2 py-6 text-muted-foreground">
+                      <p className="text-xs">
+                        Request history will appear here
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </ResizablePanel>
+
+          {/* Drag handle */}
+          <ResizableHandle withHandle />
+
+          {/* Right Panel - Template Viewer (like VS Code editor) */}
+          <ResizablePanel defaultSize={72} minSize={40}>
+            <div className="h-full overflow-auto p-4">
+              <div className="h-full rounded-xl border border-border bg-card p-5">
+                <TemplateViewer
+                  data={responseData}
+                  isLoading={isLoading}
+                  error={error}
+                />
+              </div>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      </div>
 
       {/* Floating n8n Workflow Embed */}
       <FloatingAssistant />
