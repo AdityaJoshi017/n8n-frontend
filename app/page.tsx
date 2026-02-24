@@ -103,9 +103,10 @@ export default function Home() {
       </header>
 
       {/* Main Content */}
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Left Column - Command Panel */}
+      <main className="mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        {/* Top Row: Command Panel + Template Viewer */}
+        <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
+          {/* Left Column - Command Panel + History */}
           <div className="flex flex-col gap-6">
             <div className="rounded-xl border border-border bg-card p-5">
               <CommandPanel
@@ -126,7 +127,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right Column - Template Viewer */}
+          {/* Right Column - Template Viewer (wider) */}
           <div className="rounded-xl border border-border bg-card p-5">
             <TemplateViewer
               data={responseData}

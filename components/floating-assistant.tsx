@@ -30,9 +30,8 @@ export function FloatingAssistant() {
 
   return (
     <div
-      className={`${containerClass} flex flex-col border border-border bg-card overflow-hidden ${
-        fullscreen ? "" : "rounded-xl"
-      }`}
+      className={`${containerClass} flex flex-col border border-border bg-card overflow-hidden ${fullscreen ? "" : "rounded-xl"
+        }`}
     >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border bg-secondary px-4 py-3">
