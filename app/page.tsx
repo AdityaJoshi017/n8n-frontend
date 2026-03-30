@@ -139,8 +139,8 @@ export default function Home() {
 
           {/* Right Panel - Template Viewer (like VS Code editor) */}
           <ResizablePanel defaultSize={72} minSize={40}>
-            <div className="h-full overflow-auto p-4">
-              <div className="h-full rounded-xl border border-border bg-card p-5">
+            <div className="flex h-full flex-col p-4">
+              <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-card p-5">
                 <TemplateViewer
                   data={responseData}
                   isLoading={isLoading}

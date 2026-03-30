@@ -16,6 +16,7 @@ import {
   MoreVertical,
   Plus,
   PanelLeft,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -334,6 +335,27 @@ function RawObjectView({ data }: { data: unknown }) {
 
 /* ──────────────────────── JSON View ──────────────────────── */
 
+function getInspectionTypeCode(data: unknown): string {
+  if (!data || typeof data !== "object") return "template";
+  const d = data as Record<string, unknown>;
+  // Check direct property
+  if (typeof d.inspectionTypeCode === "string" && d.inspectionTypeCode) {
+    return d.inspectionTypeCode;
+  }
+  // Check inside template object
+  if (d.template && typeof d.template === "object") {
+    const t = d.template as Record<string, unknown>;
+    if (typeof t.inspectionTypeCode === "string" && t.inspectionTypeCode) {
+      return t.inspectionTypeCode;
+    }
+  }
+  // Check array first element
+  if (Array.isArray(data) && data.length > 0) {
+    return getInspectionTypeCode(data[0]);
+  }
+  return "template";
+}
+
 function JsonView({ data }: { data: unknown }) {
   const [copied, setCopied] = useState(false);
   const json = JSON.stringify(data, null, 2);
@@ -344,22 +366,48 @@ function JsonView({ data }: { data: unknown }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleDownload = () => {
+    const filename = `${getInspectionTypeCode(data)}.json`;
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="relative">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={handleCopy}
-        className="absolute right-2 top-2 h-7 w-7 text-muted-foreground hover:text-foreground"
-      >
-        {copied ? (
-          <Check className="h-3.5 w-3.5 text-success" />
-        ) : (
-          <Copy className="h-3.5 w-3.5" />
-        )}
-        <span className="sr-only">Copy JSON</span>
-      </Button>
-      <pre className="overflow-auto rounded-lg bg-secondary p-4 text-xs font-mono text-foreground leading-relaxed max-h-[600px]">
+    <div className="relative h-full flex flex-col">
+      <div className="absolute right-2 top-2 flex items-center gap-1 z-10">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleDownload}
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          title="Download JSON"
+        >
+          <Download className="h-3.5 w-3.5" />
+          <span className="sr-only">Download JSON</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleCopy}
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          title="Copy JSON"
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-green-500" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
+          <span className="sr-only">Copy JSON</span>
+        </Button>
+      </div>
+      <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 pt-10 text-xs font-mono text-foreground leading-relaxed">
         {json}
       </pre>
     </div>
