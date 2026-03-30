@@ -1,12 +1,19 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { Workflow, Zap } from "lucide-react";
+import { Workflow, Zap, Pencil, Check, X, RotateCcw } from "lucide-react";
 import { CommandPanel } from "@/components/command-panel";
 import { TemplateViewer } from "@/components/template-viewer";
 import { FloatingAssistant } from "@/components/floating-assistant";
 import { ResponseLog } from "@/components/response-log";
-import { sendCommand } from "@/lib/send-command";
+import {
+  sendCommand,
+  getWebhookUrl,
+  setWebhookUrl,
+  getDefaultWebhookUrl,
+} from "@/lib/send-command";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -25,6 +32,44 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [webhookUrl, setWebhookUrlState] = useState<string>("");
+  const [isEditingUrl, setIsEditingUrl] = useState(false);
+  const [editUrlValue, setEditUrlValue] = useState("");
+
+  // Load webhook URL from localStorage on mount
+  useEffect(() => {
+    setWebhookUrlState(getWebhookUrl());
+  }, []);
+
+  const handleEditUrl = () => {
+    setEditUrlValue(webhookUrl);
+    setIsEditingUrl(true);
+  };
+
+  const handleSaveUrl = () => {
+    setWebhookUrl(editUrlValue);
+    setWebhookUrlState(editUrlValue || getDefaultWebhookUrl());
+    setIsEditingUrl(false);
+    // Re-check connection with new URL
+    setConnected(null);
+    sendCommand({ action: "GET_TEMPLATE" })
+      .then((data) => {
+        setConnected(true);
+        setResponseData(data);
+      })
+      .catch(() => setConnected(false));
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingUrl(false);
+    setEditUrlValue("");
+  };
+
+  const handleResetUrl = () => {
+    setWebhookUrl("");
+    setWebhookUrlState(getDefaultWebhookUrl());
+    setIsEditingUrl(false);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -65,9 +110,9 @@ export default function Home() {
     <div className="flex h-screen flex-col bg-background">
       {/* Header */}
       <header className="shrink-0 border-b border-border bg-card">
-        <div className="flex items-center justify-between px-4 py-3 sm:px-6">
+        <div className="flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
               <Workflow className="h-5 w-5 text-primary-foreground" />
             </div>
             <div>
@@ -79,12 +124,74 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          {/* Webhook URL display/edit */}
+          <div className="flex flex-1 items-center justify-center">
+            {isEditingUrl ? (
+              <div className="flex w-full max-w-2xl items-center gap-2">
+                <Input
+                  value={editUrlValue}
+                  onChange={(e) => setEditUrlValue(e.target.value)}
+                  placeholder="Enter webhook URL..."
+                  className="h-8 flex-1 bg-secondary text-xs font-mono"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveUrl();
+                    if (e.key === "Escape") handleCancelEdit();
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleSaveUrl}
+                  className="h-7 w-7 text-success hover:text-success"
+                  title="Save URL"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCancelEdit}
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  title="Cancel"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleResetUrl}
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  title="Reset to default"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex max-w-2xl items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3 py-1.5">
+                <code className="truncate text-xs font-mono text-muted-foreground">
+                  {webhookUrl || "Loading..."}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleEditUrl}
+                  className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                  title="Edit webhook URL"
+                >
+                  <Pencil className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2">
             <div className="flex items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1.5">
               <Zap
                 className={`h-3.5 w-3.5 ${
                   connected === true
-                    ? "text-success"
+                    ? "text-green-500"
                     : connected === false
                       ? "text-destructive"
                       : "text-muted-foreground animate-pulse"
