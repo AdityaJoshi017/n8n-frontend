@@ -11,16 +11,17 @@
 
 const TAB_CHAR = "\t";
 
-interface ParsedLine {
-  text: string;
-  originalIndent: number;
-  isTab: boolean;
-  isModule: boolean;
-  isField: boolean;
-  isOption: boolean;
-  isNote: boolean;
-  isAmbiguous: boolean;
-}
+/**
+ * @typedef {Object} ParsedLine
+ * @property {string} text
+ * @property {number} originalIndent
+ * @property {boolean} isTab
+ * @property {boolean} isModule
+ * @property {boolean} isField
+ * @property {boolean} isOption
+ * @property {boolean} isNote
+ * @property {boolean} isAmbiguous
+ */
 
 // Patterns to detect structure
 const TAB_PATTERNS = [
@@ -38,6 +39,12 @@ const MODULE_PATTERNS = [
 
 const FIELD_HINT_PATTERN = /\{[^}]+\}/;
 
+// Heuristics: lines with these hints are likely choice fields expecting options beneath.
+const CHOICE_HINT_PATTERN = /\{[^}]*\b(checkbox|check box|radio|radio group|single-select|dropdown|drop down|select)\b[^}]*\}/i;
+
+// Heuristics: lines that look like section headers / notes (should not become modules)
+const NOTE_LIKE_PATTERN = /(no calculations needed|srps will handle|pre[- ]?loaded|prepopulated|this report will always be generated|dev note|question:)/i;
+
 const OPTION_INDICATORS = [
   "yes",
   "no",
@@ -49,13 +56,12 @@ const OPTION_INDICATORS = [
   "auto generated",
   "other",
   "none",
-  "select",
-  "choose",
+  // Do not include select/choose here; those are prompts, not options.
 ];
 
 const PROMPT_PATTERNS = [/^select\s/i, /^choose\s/i, /^pick\s/i, /\?$/];
 
-function countLeadingWhitespace(line: string): number {
+function countLeadingWhitespace(line) {
   const match = line.match(/^(\s*)/);
   if (!match) return 0;
   const ws = match[1];
@@ -68,39 +74,89 @@ function countLeadingWhitespace(line: string): number {
   return Math.floor(count);
 }
 
-function cleanLine(line: string): string {
+function cleanLine(line) {
   return line
     .trim()
-    .replace(/^[-_•·▪▸►]+\s*/, "") // Remove leading dashes, bullets
+    // Remove leading bullets/markers often used in Jira exports
+    .replace(/^[-_•·▪▸►]+\s*/, "")
+    .replace(/^(?:o|O)\s+/, "")
+    .replace(/^[•]+\s*/, "")
     .replace(/\s+/g, " ") // Normalize whitespace
     .trim();
 }
 
-function isTabLine(text: string): boolean {
+function preprocessInput(input) {
+  // Normalize escape sequences commonly present when Jira text is copied from JSON.
+  // Keep this conservative: only handle literal backslash + t/n.
+  return String(input || '')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t');
+}
+
+function expandUnderHierarchy(text) {
+  // Example:
+  // "Under Final Actions > Inspection Outcomes" -> ["Final Actions", "Inspection Outcomes"]
+  const m = text.match(/^under\s+(.+)$/i);
+  if (!m || !m[1]) return null;
+  const chain = m[1]
+    .split('>')
+    .map((s) => cleanLine(s))
+    .filter(Boolean);
+  return chain.length ? chain : null;
+}
+
+function isTabLine(text) {
   return TAB_PATTERNS.some((p) => p.test(text));
 }
 
-function isModuleLine(text: string): boolean {
-  return MODULE_PATTERNS.some((p) => p.test(text));
+function isModuleLine(text) {
+  if (MODULE_PATTERNS.some((p) => p.test(text))) return true;
+  // Also treat explicit module hints in braces as modules.
+  // e.g., "Fees Details {Generic Module}", "Signature {generic list module}"
+  if (/\{[^}]*\b(module|generic module|generic list|list module|team module|regulated entity module|compliance contact|responsible contact)\b[^}]*\}/i.test(text)) {
+    return true;
+  }
+  return false;
 }
 
-function isOptionLike(text: string): boolean {
+function isOptionLike(text) {
   const lower = text.toLowerCase();
-  return (
-    OPTION_INDICATORS.some((opt) => lower === opt || lower.startsWith(opt)) ||
-    text.length < 25 // Short items are often options
-  );
+  // Be strict: "short" alone is not enough (it caused many false options).
+  // Only treat as option if it matches known option indicators OR looks like a compact label.
+  if (OPTION_INDICATORS.some((opt) => lower === opt || lower.startsWith(opt))) return true;
+  // Compact labels: 1-3 words, not ending with ':' and not containing braces.
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length >= 1 && words.length <= 3 && text.length <= 32 && !text.includes('{') && !text.endsWith(':')) {
+    // Avoid classifying common module/field-ish keywords as options.
+    if (/\b(tab|module|section name|checklist item options|checklist media options)\b/i.test(text)) return false;
+    return true;
+  }
+  return false;
 }
 
-function isPromptLine(text: string): boolean {
+function isPromptLine(text) {
   return PROMPT_PATTERNS.some((p) => p.test(text));
 }
 
-function hasFieldHint(text: string): boolean {
+function isChoiceField(text) {
+  // Prompts like "Select a delivery method" or explicit brace hints.
+  if (isPromptLine(text)) return true;
+  if (CHOICE_HINT_PATTERN.test(text)) return true;
+  // Lines that contain select/choose without being options.
+  if (/\b(select|choose|pick)\b/i.test(text)) return true;
+  // Checklist blocks often introduce option groups.
+  if (/^checklist\s+(item\s+options|options)$/i.test(text)) return true;
+  if (/^delivery\s+(options|methods)$/i.test(text)) return true;
+  return false;
+}
+
+function hasFieldHint(text) {
   return FIELD_HINT_PATTERN.test(text);
 }
 
-function parseLine(line: string, prevContext: ParsedLine | null): ParsedLine {
+/** @param {string} line @param {ParsedLine|null} prevContext @returns {ParsedLine} */
+function parseLine(line, prevContext) {
   const originalIndent = countLeadingWhitespace(line);
   const text = cleanLine(line);
 
@@ -121,13 +177,14 @@ function parseLine(line: string, prevContext: ParsedLine | null): ParsedLine {
   const isModule = !isTab && isModuleLine(text);
   const hasHint = hasFieldHint(text);
   const isPrompt = isPromptLine(text);
+  const isChoice = isChoiceField(text);
 
   // Determine if this is a field based on hints or context
   const isField =
     !isTab &&
     !isModule &&
     (hasHint ||
-      isPrompt ||
+      isChoice ||
       (prevContext?.isModule && originalIndent > prevContext.originalIndent));
 
   // Options are short items that follow a prompt/field
@@ -136,11 +193,18 @@ function parseLine(line: string, prevContext: ParsedLine | null): ParsedLine {
     !isModule &&
     !isField &&
     prevContext &&
+    // Only allow options under a clear choice/prompt field, not under arbitrary fields.
     (prevContext.isField || prevContext.isOption) &&
+    (isChoiceField(prevContext.text) || prevContext.isOption) &&
     isOptionLike(text);
 
   // Notes are descriptive lines that don't fit other categories
-  const isNote = !isTab && !isModule && !isField && !isOption && text.length > 50;
+  const isNote =
+    !isTab &&
+    !isModule &&
+    !isField &&
+    !isOption &&
+    (text.length > 60 || NOTE_LIKE_PATTERN.test(text));
 
   return {
     text,
@@ -154,7 +218,8 @@ function parseLine(line: string, prevContext: ParsedLine | null): ParsedLine {
   };
 }
 
-function assignLevel(parsed: ParsedLine, prevParsed: ParsedLine | null): number {
+/** @param {ParsedLine} parsed @param {ParsedLine|null} prevParsed @returns {number} */
+function assignLevel(parsed, prevParsed) {
   if (parsed.isTab) return 0;
   if (parsed.isModule) return 1;
   if (parsed.isField) return 2;
@@ -177,12 +242,31 @@ function assignLevel(parsed: ParsedLine, prevParsed: ParsedLine | null): number 
   return 1;
 }
 
-export function formatJiraText(input: string): string {
-  const lines = input.split("\n");
-  const result: string[] = [];
-  let prevParsed: ParsedLine | null = null;
+export function formatJiraText(input) {
+  const normalized = preprocessInput(input);
+  const lines = normalized.split("\n");
+  /** @type {string[]} */
+  const result = [];
+  /** @type {ParsedLine|null} */
+  let prevParsed = null;
 
   for (const line of lines) {
+    // Expand "Under A > B > C" into explicit hierarchy lines.
+    const cleaned = cleanLine(line);
+    const underChain = cleaned ? expandUnderHierarchy(cleaned) : null;
+    if (underChain) {
+      // Emit hierarchy lines as separate lines with increasing indentation.
+      for (let i = 0; i < underChain.length; i++) {
+        const virtualLine = TAB_CHAR.repeat(i) + underChain[i];
+        const parsedVirtual = parseLine(virtualLine, prevParsed);
+        if (!parsedVirtual.text) continue;
+        const levelVirtual = assignLevel(parsedVirtual, prevParsed);
+        result.push(TAB_CHAR.repeat(levelVirtual) + parsedVirtual.text);
+        prevParsed = parsedVirtual;
+      }
+      continue;
+    }
+
     const parsed = parseLine(line, prevParsed);
 
     if (!parsed.text) {
@@ -219,7 +303,7 @@ export function formatJiraText(input: string): string {
 /**
  * Extract text content from various file types
  */
-export async function extractTextFromFile(file: File): Promise<string> {
+export async function extractTextFromFile(file) {
   const extension = file.name.split(".").pop()?.toLowerCase();
 
   switch (extension) {
@@ -240,7 +324,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
   }
 }
 
-async function extractFromPDF(file: File): Promise<string> {
+async function extractFromPDF(file) {
   // Dynamic import to avoid bundling issues
   const pdfjsLib = await import("pdfjs-dist");
 
@@ -250,7 +334,8 @@ async function extractFromPDF(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-  const textParts: string[] = [];
+  /** @type {string[]} */
+  const textParts = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
@@ -264,7 +349,7 @@ async function extractFromPDF(file: File): Promise<string> {
   return textParts.join("\n\n");
 }
 
-async function extractFromWord(file: File): Promise<string> {
+async function extractFromWord(file) {
   // Dynamic import
   const mammoth = await import("mammoth");
   const arrayBuffer = await file.arrayBuffer();
