@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Send,
   RotateCcw,
@@ -10,10 +10,14 @@ import {
   RefreshCw,
   Layers,
   Play,
+  Upload,
+  Wand2,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { sendCommand } from "@/lib/send-command";
+import { formatJiraText, extractTextFromFile } from "@/lib/jira-formatter";
 
 type InputMode = "text" | "jira" | "requirement";
 
@@ -32,6 +36,9 @@ export function CommandPanel({
   const [input, setInput] = useState("");
   const [dryRun, setDryRun] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFormatting, setIsFormatting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const placeholders: Record<InputMode, string> = {
     text: 'e.g. "add tab Profile" or "please add a profile section"',
@@ -86,6 +93,43 @@ export function CommandPanel({
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const handleFormat = () => {
+    if (!input.trim()) return;
+    setIsFormatting(true);
+    // Use setTimeout to allow UI to update
+    setTimeout(() => {
+      const formatted = formatJiraText(input);
+      setInput(formatted);
+      setIsFormatting(false);
+    }, 10);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const text = await extractTextFromFile(file);
+      setInput(text);
+    } catch (err) {
+      console.error("Failed to extract text from file:", err);
+      alert(
+        `Failed to read file: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
+    } finally {
+      setIsUploading(false);
+      // Reset file input so same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
   };
 
   return (
@@ -155,17 +199,64 @@ export function CommandPanel({
         </TabsList>
       </Tabs>
 
-      {/* Jira Dry Run Toggle */}
+      {/* Jira Options: Dry Run, Upload File, Format */}
       {mode === "jira" && (
-        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={dryRun}
-            onChange={(e) => setDryRun(e.target.checked)}
-            className="accent-primary rounded"
-          />
-          Dry Run (preview only, no changes applied)
-        </label>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={dryRun}
+              onChange={(e) => setDryRun(e.target.checked)}
+              className="accent-primary rounded"
+            />
+            Dry Run (preview only)
+          </label>
+
+          <div className="flex items-center gap-1">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.text,.pdf,.doc,.docx"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+
+            {/* Upload button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={triggerFileUpload}
+              disabled={isUploading}
+              className="h-7 text-xs gap-1.5"
+              title="Upload TXT, PDF, or Word file"
+            >
+              {isUploading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Upload className="h-3 w-3" />
+              )}
+              Upload File
+            </Button>
+
+            {/* Format button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleFormat}
+              disabled={isFormatting || !input.trim()}
+              className="h-7 text-xs gap-1.5"
+              title="Format messy Jira text into clean indentation"
+            >
+              {isFormatting ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Wand2 className="h-3 w-3" />
+              )}
+              Format
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Textarea Input */}
