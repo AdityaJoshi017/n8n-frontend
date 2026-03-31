@@ -3,7 +3,7 @@
 import { Workflow, ExternalLink } from "lucide-react";
 
 const WORKFLOW_URL =
-  "https://jonalo9576.app.n8n.cloud/workflow/EZavc7Q9GvQ24aRm";
+  "https://wokor81792atizkatdotcom.app.n8n.cloud/workflow/tGyxrTHSaZ8WFf6Y";
 
 export function FloatingAssistant() {
   const launchWorkflow = () => {
