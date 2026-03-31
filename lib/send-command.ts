@@ -1,6 +1,6 @@
 // Default webhook URL
 const DEFAULT_WEBHOOK_URL =
-  "https://jonalo9576.app.n8n.cloud/webhook/69f4179a-0af0-49b0-aa63-928bc56edec9";
+  "https://wokor81792atizkatdotcom.app.n8n.cloud/webhook/f6ff9251-e5dc-49c9-88d3-140722555e34";
 
 const STORAGE_KEY = "n8n_webhook_url";
 
