@@ -18,8 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { sendCommand } from "@/lib/send-command";
 import { formatJiraText, extractTextFromFile } from "@/lib/jira-formatter";
+import { parseJsonAndFormatJira } from "@/lib/json-to-jira";
 
-type InputMode = "text" | "jira" | "requirement";
+type InputMode = "text" | "jira" | "requirement" | "json-to-jira";
 
 interface CommandPanelProps {
   onResponse: (data: unknown, payload: unknown) => void;
@@ -45,6 +46,8 @@ export function CommandPanel({
     jira: 'Display Name: Test Template\nInspection Type Code: DENTAL\n\nTab Profile\nTeam Module\n- Inspector Name {text 40 characters}',
     requirement:
       "Profile Tab\nTeam module\nPermit#\nRequested By\nContractor\nOwner",
+    "json-to-jira":
+      '{"inspectionTypeCode":"ELE1","displayName":"Electrical","tabs":[...]}',
   };
 
   const buildPayload = (): Record<string, unknown> => {
@@ -55,6 +58,9 @@ export function CommandPanel({
         return { action: "IMPORT_JIRA_TEXT", jiraText: input, dryRun };
       case "requirement":
         return { requirementText: input };
+      case "json-to-jira":
+        // This is a client-side conversion, doesn't need to send to server
+        return {};
     }
   };
 
@@ -76,6 +82,18 @@ export function CommandPanel({
 
   const handleSend = async () => {
     if (!input.trim()) return;
+
+    // Handle JSON to Jira conversion client-side
+    if (mode === "json-to-jira") {
+      try {
+        const jiraText = parseJsonAndFormatJira(input);
+        onResponse({ jiraText }, { action: "JSON_TO_JIRA", json: input });
+      } catch (err) {
+        onError(err instanceof Error ? err.message : "Conversion failed");
+      }
+      return;
+    }
+
     await execute(buildPayload());
   };
 
@@ -171,7 +189,7 @@ export function CommandPanel({
         onValueChange={(v) => setMode(v as InputMode)}
         className="w-full"
       >
-        <TabsList className="grid w-full grid-cols-3 bg-secondary">
+        <TabsList className="grid w-full grid-cols-4 bg-secondary">
           <TabsTrigger
             value="text"
             className="gap-1.5 text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
@@ -195,6 +213,14 @@ export function CommandPanel({
             <ClipboardPaste className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Requirement Paste</span>
             <span className="sm:hidden">Paste</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="json-to-jira"
+            className="gap-1.5 text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+          >
+            <Layers className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">JSON → Jira</span>
+            <span className="sm:hidden">JSON</span>
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -254,6 +280,56 @@ export function CommandPanel({
                 <Wand2 className="h-3 w-3" />
               )}
               Format
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* JSON to Jira Options: Upload JSON File, Format button */}
+      {mode === "json-to-jira" && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            {/* Hidden file input for JSON */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+
+            {/* Upload JSON button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={triggerFileUpload}
+              disabled={isUploading}
+              className="h-7 text-xs gap-1.5"
+              title="Upload JSON template file"
+            >
+              {isUploading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Upload className="h-3 w-3" />
+              )}
+              Upload JSON
+            </Button>
+
+            {/* Format button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleFormat}
+              disabled={isFormatting || !input.trim()}
+              className="h-7 text-xs gap-1.5"
+              title="Format JSON to Jira text"
+            >
+              {isFormatting ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Wand2 className="h-3 w-3" />
+              )}
+              Convert
             </Button>
           </div>
         </div>
