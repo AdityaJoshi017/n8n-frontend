@@ -17,6 +17,7 @@ import {
   Plus,
   PanelLeft,
   Download,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +37,7 @@ interface TemplateViewerProps {
   error: string | null;
 }
 
-type ViewMode = "visual" | "json" | "builder";
+type ViewMode = "visual" | "json" | "builder" | "jira";
 
 interface TemplateField {
   name?: string;
@@ -329,6 +330,59 @@ function RawObjectView({ data }: { data: unknown }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ──────────────────────── Jira View ──────────────────────── */
+
+function JiraView({ data }: { data: unknown }) {
+  const [copied, setCopied] = useState(false);
+
+  // Extract jiraText from response
+  const jiraText = useMemo(() => {
+    if (!data || typeof data !== "object") return "";
+    const d = data as Record<string, unknown>;
+    if (typeof d.jiraText === "string") return d.jiraText;
+    // Check if it's wrapped in a response object
+    if (d.jiraText && typeof d.jiraText === "string") return d.jiraText;
+    return "";
+  }, [data]);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(jiraText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!jiraText) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+        <FileText className="h-10 w-10 opacity-30" />
+        <p className="text-sm">No Jira text in response</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative h-full flex flex-col">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleCopy}
+        className="absolute right-2 top-2 h-7 w-7 text-muted-foreground hover:text-foreground z-10"
+        title="Copy Jira text"
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-green-500" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
+        <span className="sr-only">Copy Jira text</span>
+      </Button>
+      <pre className="flex-1 overflow-auto rounded-lg bg-secondary p-4 pt-10 text-xs font-mono text-foreground leading-relaxed whitespace-pre-wrap break-words">
+        {jiraText}
+      </pre>
     </div>
   );
 }
@@ -1156,6 +1210,17 @@ export function TemplateViewer({
             Visual
           </button>
           <button
+            onClick={() => setViewMode("jira")}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              viewMode === "jira"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Jira
+          </button>
+          <button
             onClick={() => setViewMode("json")}
             className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
               viewMode === "json"
@@ -1179,8 +1244,12 @@ export function TemplateViewer({
           <div className="h-full overflow-auto rounded-lg border border-border bg-card p-3">
             <VisualView data={template} />
           </div>
+        ) : viewMode === "jira" ? (
+          <div className="h-full rounded-lg border border-border bg-card p-3">
+            <JiraView data={data} />
+          </div>
         ) : (
-          <div className="h-full overflow-auto rounded-lg border border-border bg-card p-3">
+          <div className="h-full rounded-lg border border-border bg-card p-3">
             <JsonView data={data} />
           </div>
         )}
