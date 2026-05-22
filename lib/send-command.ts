@@ -1,6 +1,7 @@
 // Default webhook URL
+// Previous: https://wokor81792atizkatdotcom.app.n8n.cloud/webhook/f6ff9251-e5dc-49c9-88d3-140722555e34
 const DEFAULT_WEBHOOK_URL =
-  "https://wokor81792atizkatdotcom.app.n8n.cloud/webhook/f6ff9251-e5dc-49c9-88d3-140722555e34";
+  "https://fifahis650atnrizadotcom.app.n8n.cloud/webhook/e0fc7d28-309a-4f33-a45e-a9548ac210a6";
 
 const STORAGE_KEY = "n8n_webhook_url";
 
@@ -23,13 +24,36 @@ export function getDefaultWebhookUrl(): string {
 }
 
 export async function sendCommand(command: Record<string, unknown>) {
-  const res = await fetch(getWebhookUrl(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-  });
+  const url = getWebhookUrl();
+  console.log("[v0] Sending command to webhook:", url, command);
 
-  return await res.json();
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(command),
+    });
+
+    if (!res.ok) {
+      console.error(
+        "[v0] Webhook returned status",
+        res.status,
+        res.statusText
+      );
+      throw new Error(
+        `Webhook error: ${res.status} ${res.statusText}. Make sure the webhook URL is correct and the n8n workflow is running.`
+      );
+    }
+
+    const data = await res.json();
+    console.log("[v0] Webhook response:", data);
+    return data;
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Unknown error connecting to webhook";
+    console.error("[v0] Webhook connection error:", message);
+    throw new Error(message);
+  }
 }
