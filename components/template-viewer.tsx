@@ -412,7 +412,20 @@ function getInspectionTypeCode(data: unknown): string {
 
 function JsonView({ data }: { data: unknown }) {
   const [copied, setCopied] = useState(false);
-  const json = JSON.stringify(data, null, 2);
+
+  // Extract just the template, removing ok and questions wrapper
+  const displayData = useMemo(() => {
+    if (!data || typeof data !== "object") return data;
+    const d = data as Record<string, unknown>;
+    // If it has a template property, use that
+    if (d.template && typeof d.template === "object") {
+      return d.template;
+    }
+    // Otherwise return the data as-is
+    return data;
+  }, [data]);
+
+  const json = JSON.stringify(displayData, null, 2);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(json);
@@ -421,7 +434,7 @@ function JsonView({ data }: { data: unknown }) {
   };
 
   const handleDownload = () => {
-    const filename = `${getInspectionTypeCode(data)}.json`;
+    const filename = `${getInspectionTypeCode(displayData)}.json`;
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
